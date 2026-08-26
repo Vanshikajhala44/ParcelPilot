@@ -230,6 +230,31 @@ class StructuredDataAccess:
             return 0.0
         return 250.0
 
+    def cancellation_fee_explanation(self, order: dict[str, Any]) -> str:
+        """Human-readable explanation of the cancellation fee decision.
+
+        Surfaces whether a signed customer agreement overrides the default SOP
+        rule (agreement authority rank 1 takes precedence over standard SOP).
+        """
+        if not order:
+            return "No order provided."
+        status = str(order.get("status") or "").upper()
+        if status != "BOOKED":
+            return f"No cancellation fee applies: order is {status} (fee only applies to BOOKED shipments)."
+
+        agreement = self._find_agreement_text(order.get("account_id"))
+        override = self._check_cancellation_fee_override(order, agreement)
+        if override["waives_fee"]:
+            return (
+                f"Agreement override: {override['reason']} "
+                "(default SOP would charge INR 250.00 for cancellations more than 30 minutes after "
+                "booking, but the signed customer agreement takes precedence — authority rank 1 > SOP.)"
+            )
+        return (
+            "Default SOP applies: INR 250.00 for cancellations more than 30 minutes after booking "
+            "(no agreement override found)."
+        )
+
     def _calculate_service_credit_inr(self, order: dict[str, Any], carrier_fault: bool, customer_fault: bool) -> dict[str, Any]:
         """Calculate service credit INR based on SOP and customer agreement overrides.
 

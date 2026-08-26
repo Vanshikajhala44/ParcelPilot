@@ -33,6 +33,14 @@ class ParcelPilotAgent:
     and internal notes are context-only and may contain incorrect guidance.
     """
 
+    STOPWORDS = {
+        "the", "a", "an", "of", "to", "for", "and", "or", "in", "on", "at",
+        "is", "are", "was", "were", "be", "been", "what", "how", "can", "could",
+        "i", "do", "does", "did", "should", "would", "will", "my", "me", "we",
+        "you", "your", "with", "from", "not", "this", "that", "there", "about",
+        "please", "get", "have", "has", "it", "if", "so", "when", "who", "some",
+    }
+
     def __init__(self, project_root: str | Path, user: dict[str, Any] | None = None):
         self.project_root = Path(project_root).resolve()
         self.user = user or {"user_id": "internal-operator", "role": "support", "account_ids": []}
@@ -241,6 +249,56 @@ class ParcelPilotAgent:
         }
         return result
 
+    def _order_warnings(self, order: dict[str, Any]) -> list[str]:
+        """Surface stale/needs-attention signals from the order record."""
+        warnings: list[str] = []
+        if not order:
+            return warnings
+        status = str(order.get("status") or "").upper()
+        if status == "BOOKED":
+            if order.get("cancellation_requested_at"):
+                warnings.append(
+                    "Status may be stale: a cancellation was requested but the order is still BOOKED and not yet updated."
+                )
+            if not order.get("pickup_actual_at"):
+                window_end = order.get("pickup_window_end")
+                snap = self.data.snapshot_timestamp
+                end_parsed = self.data._safe_parse_datetime(window_end)
+                snap_parsed = self.data._safe_parse_datetime(snap) if snap else None
+                if end_parsed and snap_parsed and end_parsed < snap_parsed:
+                    warnings.append(
+                        "Pickup window has elapsed with no pickup recorded — the shipment may have been missed."
+                    )
+        return warnings
+
+    DOMAIN_WORDS = {
+        "policy", "sop", "support", "agreement", "document", "customer",
+        "service", "product", "account", "order", "ticket", "shipment",
+        "question", "sla", "procedure", "guideline", "security", "standard",
+        "guide", "protocol",
+    }
+
+    def _coverage_score(self, query: str, docs: list[dict[str, Any]]) -> float:
+        """How well the retrieved documents cover the specific topic of a query.
+
+        Generic domain words (e.g. 'policy', 'support', 'sop') are ignored so a
+        vague policy question with no concrete topic is treated as uncovered and
+        routed to escalation instead of returning a fabricated policy answer.
+        """
+        words = {
+            w
+            for w in re.findall(r"[a-z0-9]{3,}", query.lower())
+            if w not in self.STOPWORDS and w not in self.DOMAIN_WORDS
+        }
+        if not words:
+            # No concrete topic in the question -> no authoritative coverage.
+            return 0.0
+        blob = " ".join(
+            (d.get("matched_excerpt") or d.get("text") or "").lower() for d in docs
+        )
+        hits = sum(1 for w in words if w in blob)
+        return hits / len(words)
+
     def _answer_from_order_with_docs(self, order: dict[str, Any], query: str, docs: list[dict[str, Any]]) -> dict[str, Any]:
         """Answer a query about an order by combining structured data with document evidence.
 
@@ -267,6 +325,10 @@ class ParcelPilotAgent:
         parts.append(f"Order {order.get('order_id')} for {account_name} (Account: {account_id}):")
         parts.append(f"  Status: {order.get('status')}")
         parts.append(f"  Cancellation fee: INR {order.get('cancellation_fee_inr', 0):.2f}")
+        parts.append(f"  Fee explanation: {self.data.cancellation_fee_explanation(order)}")
+
+        for warning in self._order_warnings(order):
+            parts.append(f"  ⚠ {warning}")
 
         # Check if any agreement overrides the default
         if agreement_docs:
@@ -568,6 +630,23 @@ class ParcelPilotAgent:
 
         if is_doc_query:
             docs = self.documents.search_documents(message, top_k=3)
+
+            # Uncertainty handling: if the corpus has no meaningful coverage of the
+            # question, do NOT fabricate an answer - recommend escalation instead.
+            if self._coverage_score(message, docs) < 0.15:
+                return {
+                    "status": "completed",
+                    "tool_used": "document_search",
+                    "result": "recommend_escalation",
+                    "summary": (
+                        "I could not find an authoritative document in the supplied policy, SOP, or "
+                        "agreement set that covers this question. Rather than invent an answer, I "
+                        "recommend escalating this to a specialist for review."
+                    ),
+                    "sources": [],
+                    "uncertainty": True,
+                }
+
             summary_parts = []
             for doc in docs[:1]:
                 title = doc.get("title", "")

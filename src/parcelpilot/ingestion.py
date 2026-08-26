@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
+import logging
 from pathlib import Path
 import re
 from typing import Any, Iterable
@@ -8,6 +9,8 @@ from typing import Any, Iterable
 import fitz
 
 from .vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
