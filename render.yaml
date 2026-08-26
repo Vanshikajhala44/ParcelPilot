@@ -1,0 +1,30 @@
+# Render Blueprint — ParcelPilot Customer Support AI Agent
+# Deploy by connecting this repo in Render and choosing "Blueprint".
+# Uses the `master` branch (default GitHub branch for this project).
+
+services:
+  - type: web
+    name: parcelpilot-support-agent
+    runtime: python
+    plan: free
+    branch: master
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run ui/app.py --server.address 0.0.0.0 --server.port $PORT
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: LLM_PROVIDER
+        value: local
+      # Uncomment below to enable Mistral-based LLM summaries.
+      # - key: MISTRAL_API_KEY
+      #   sync: false
+      # - key: MISTRAL_MODEL
+      #   value: mistral-small-latest
+      # - key: MISTRAL_EMBED_MODEL
+      #   value: mistral-embed
+      # --- Vector retrieval (Qdrant) ---
+      # The app falls back to keyword-only retrieval when Qdrant is disabled.
+      - key: USE_QDRANT
+        value: "false"
+      # Disable the opt-in autonomous LangChain agent by default (safe/deterministic).
+      - key: AGENT_MODE
+        value: rules
