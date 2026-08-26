@@ -7,7 +7,7 @@ services:
     name: parcelpilot-support-agent
     runtime: python
     plan: free
-    branch: master
+    branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run ui/app.py --server.address 0.0.0.0 --server.port $PORT
     healthCheckPath: /_stcore/health
