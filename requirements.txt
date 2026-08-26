@@ -1,0 +1,11 @@
+streamlit
+openpyxl
+PyMuPDF
+python-dotenv
+pytest
+mistralai
+langchain
+langchain-core
+langchain-mistralai
+langchain-qdrant
+qdrant-client

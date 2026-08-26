@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Environment
+.env
+
+# Editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Build / artifacts
+*.log
+build/
+dist/
+.dist/
+*.egg-info/
+.coverage
